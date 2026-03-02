@@ -53,151 +53,136 @@ import es.usc.citius.hipster.model.function.NodeExpander;
  *         <a href="mailto:christophe.moins@yahoo.fr">christophe.moins@yahoo.fr
  *         </a>>
  */
+package es.usc.citius.hipster.algorithm.localsearch;
+
+import es.usc.citius.hipster.algorithm.Algorithm;
+import es.usc.citius.hipster.model.HeuristicNode;
+import es.usc.citius.hipster.model.Node;
+import es.usc.citius.hipster.model.function.NodeExpander;
+import java.util.*;
+
 public class AnnealingSearch<A, S, N extends HeuristicNode<A, S, Double, N>> extends Algorithm<A, S, N> {
 
-	static final private Double DEFAULT_ALPHA = 0.9;
-	static final private Double DEFAULT_MIN_TEMP = 0.00001;
-	static final private Double START_TEMP = 1.;
+    private static final Double DEFAULT_ALPHA = 0.9;
+    private static final Double DEFAULT_MIN_TEMP = 0.00001;
+    private static final Double START_TEMP = 1.;
 
-	private N initialNode;
-	private Double alpha;
-	private Double minTemp;
-	private AcceptanceProbability acceptanceProbability;
-	private SuccessorFinder<A, S, N> successorFinder;
-	// expander to find all the successors of a given node.
-	private NodeExpander<A, S, N> nodeExpander;
+    private final N initialNode;
+    private final Double alpha;
+    private final Double minTemp;
+    private final AcceptanceProbability acceptanceProbability;
+    private final SuccessorFinder<A, S, N> successorFinder;
+    private final NodeExpander<A, S, N> nodeExpander;
+    
+    // Solución incidencia 4: Reutilizamos una única instancia de Random
+    private final Random random = new Random();
 
-	public AnnealingSearch(N initialNode, NodeExpander<A, S, N> nodeExpander, Double alpha, Double minTemp,
-			AcceptanceProbability acceptanceProbability, SuccessorFinder<A, S, N> successorFinder) {
-		if (initialNode == null) {
-			throw new IllegalArgumentException("Provide a valid initial node");
-		}
-		this.initialNode = initialNode;
-		if (nodeExpander == null) {
-			throw new IllegalArgumentException("Provide a valid node expander");
-		}
-		this.nodeExpander = nodeExpander;
-		if (alpha != null) {
-			if ((alpha <= 0.) || (alpha >= 1.0)) {
-				throw new IllegalArgumentException("alpha must be between 0. and 1.");
-			}
-			this.alpha = alpha;
-		} else {
-			this.alpha = DEFAULT_ALPHA;
-		}
-		if (minTemp != null) {
-			if ((minTemp < 0.) || (minTemp > 1.)) {
-				throw new IllegalArgumentException("Minimum temperature must be between 0. and 1.");
-			}
-			this.minTemp = minTemp;
-		} else {
-			this.minTemp = DEFAULT_MIN_TEMP;
-		}
-		if (acceptanceProbability != null) {
-			this.acceptanceProbability = acceptanceProbability;
-		} else {
-			this.acceptanceProbability = new AcceptanceProbability() {
-				@Override
-				public Double compute(Double oldScore, Double newScore, Double temp) {
-					return (newScore < oldScore ? 1 : Math.exp((oldScore - newScore) / temp));
-				}
-			};
-		}
-		if (successorFinder != null) {
-			this.successorFinder = successorFinder;
-		} else {
-			// default implementation of the successor: picks up a successor
-			// randomly
-			this.successorFinder = new SuccessorFinder<A, S, N>() {
-				@Override
-				public N estimate(N node, NodeExpander<A, S, N> nodeExpander) {
-					List<N> successors = new ArrayList<>();
-					// find a random successor
-					for (N successor : nodeExpander.expand(node)) {
-						successors.add(successor);
-					}
-					Random randIndGen = new Random();
-					return successors.get(Math.abs(randIndGen.nextInt()) % successors.size());
-				}
-			};
-		}
-	}
+    public AnnealingSearch(N initialNode, NodeExpander<A, S, N> nodeExpander, Double alpha, Double minTemp,
+                          AcceptanceProbability acceptanceProbability, SuccessorFinder<A, S, N> successorFinder) {
+        
+        // Validaciones obligatorias
+        if (initialNode == null) throw new IllegalArgumentException("Provide a valid initial node");
+        if (nodeExpander == null) throw new IllegalArgumentException("Provide a valid node expander");
 
-	@Override
-	public ASIterator iterator() {
-		// TODO Auto-generated method stub
-		return new ASIterator();
-	}
+        this.initialNode = initialNode;
+        this.nodeExpander = nodeExpander;
+        
+        // Solución incidencia 3: Reducción de complejidad cognitiva delegando en métodos
+        this.alpha = configureAlpha(alpha);
+        this.minTemp = configureMinTemp(minTemp);
+        this.acceptanceProbability = configureAcceptanceProbability(acceptanceProbability);
+        this.successorFinder = configureSuccessorFinder(successorFinder);
+    }
 
-	public class ASIterator implements Iterator<N> {
+    private Double configureAlpha(Double alpha) {
+        if (alpha != null) {
+            if (alpha <= 0. || alpha >= 1.0) throw new IllegalArgumentException("alpha must be between 0. and 1.");
+            return alpha;
+        }
+        return DEFAULT_ALPHA;
+    }
 
-		private Queue<N> queue = new LinkedList<N>();
-		private Double bestScore = null;
-		private Double curTemp = START_TEMP;
+    private Double configureMinTemp(Double minTemp) {
+        if (minTemp != null) {
+            if (minTemp < 0. || minTemp > 1.) throw new IllegalArgumentException("Minimum temperature must be between 0. and 1.");
+            return minTemp;
+        }
+        return DEFAULT_MIN_TEMP;
+    }
 
-		private ASIterator() {
-			bestScore = initialNode.getEstimation();
-			queue.add(initialNode);
-		}
+    private AcceptanceProbability configureAcceptanceProbability(AcceptanceProbability ap) {
+        if (ap != null) return ap;
+        return (oldScore, newScore, temp) -> (newScore < oldScore ? 1 : Math.exp((oldScore - newScore) / temp));
+    }
 
-		@Override
-		public boolean hasNext() {
-			return !queue.isEmpty();
-		}
+    private SuccessorFinder<A, S, N> configureSuccessorFinder(SuccessorFinder<A, S, N> sf) {
+        if (sf != null) return sf;
+        return (node, expander) -> {
+            List<N> successors = new ArrayList<>();
+            for (N successor : expander.expand(node)) {
+                successors.add(successor);
+            }
+            // Usamos el Random de la clase principal
+            return successors.get(Math.abs(random.nextInt()) % successors.size());
+        };
+    }
 
-		@Override
-		public N next() {
-			N currentNode = this.queue.poll();
-			if (curTemp > minTemp) {
-				N newNode = null;
-				// we add a loop to increase the effect of a change of alpha.
-				for (int i = 0; i < 100; i++) {
-					N randSuccessor = successorFinder.estimate(currentNode, nodeExpander);
-					Double score = randSuccessor.getScore();
-					if (acceptanceProbability.compute(bestScore, score, curTemp) > Math.random()) {
-						newNode = randSuccessor;
-						bestScore = score;
-					}
-				}
-				if (newNode != null) {
-					queue.add(newNode);
-				} else {
-					queue.add(currentNode);
-				}
-				curTemp *= alpha;
-			}
-			return currentNode;
-		}
+    @Override
+    public ASIterator iterator() {
+        return new ASIterator();
+    }
 
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
+    public class ASIterator implements Iterator<N> {
+        private final Queue<N> queue = new LinkedList<>();
+        private Double bestScore;
+        private Double curTemp = START_TEMP;
 
-		}
-	}
+        private ASIterator() {
+            bestScore = initialNode.getEstimation();
+            queue.add(initialNode);
+        }
 
-	/**
-	 * Interface to compute the acceptance probability. If the new score is less
-	 * than the old score, 1 will be returned so that the node is selected.
-	 * Otherwise, we compute a probability that will decrease when the newScore
-	 * or the temperature increase.
-	 * 
-	 */
+        @Override
+        public boolean hasNext() {
+            return !queue.isEmpty();
+        }
 
-	public interface AcceptanceProbability {
-		Double compute(Double oldScore, Double newScore, Double temp);
-	}
+        @Override
+        public N next() {
+            if (!hasNext()) throw new NoSuchElementException();
+            N currentNode = this.queue.poll();
+            if (curTemp > minTemp) {
+                processTemperatureStep(currentNode);
+            }
+            return currentNode;
+        }
 
-	/**
-	 * Interface to find the successor of a node.
-	 *
-	 * @param <N>
-	 */
-	public interface SuccessorFinder<A, S, N extends Node<A, S, N>> {
-		/**
-		 * @param Node
-		 * @return the successor of a node.
-		 */
-		N estimate(N node, NodeExpander<A, S, N> nodeExpander);
-	}
+        private void processTemperatureStep(N currentNode) {
+            N newNode = null;
+            for (int i = 0; i < 100; i++) {
+                N randSuccessor = successorFinder.estimate(currentNode, nodeExpander);
+                Double score = randSuccessor.getScore();
+                if (acceptanceProbability.compute(bestScore, score, curTemp) > Math.random()) {
+                    newNode = randSuccessor;
+                    bestScore = score;
+                }
+            }
+            queue.add(newNode != null ? newNode : currentNode);
+            curTemp *= alpha;
+        }
+
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    public interface AcceptanceProbability {
+        Double compute(Double oldScore, Double newScore, Double temp);
+    }
+
+    public interface SuccessorFinder<A, S, N extends Node<A, S, N>> {
+        N estimate(N node, NodeExpander<A, S, N> nodeExpander);
+    }
 }
+
