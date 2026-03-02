@@ -68,60 +68,65 @@ public class AnnealingSearch<A, S, N extends HeuristicNode<A, S, Double, N>> ext
 	private NodeExpander<A, S, N> nodeExpander;
 
 	public AnnealingSearch(N initialNode, NodeExpander<A, S, N> nodeExpander, Double alpha, Double minTemp,
-			AcceptanceProbability acceptanceProbability, SuccessorFinder<A, S, N> successorFinder) {
-		if (initialNode == null) {
-			throw new IllegalArgumentException("Provide a valid initial node");
-		}
-		this.initialNode = initialNode;
-		if (nodeExpander == null) {
-			throw new IllegalArgumentException("Provide a valid node expander");
-		}
-		this.nodeExpander = nodeExpander;
-		if (alpha != null) {
-			if ((alpha <= 0.) || (alpha >= 1.0)) {
-				throw new IllegalArgumentException("alpha must be between 0. and 1.");
-			}
-			this.alpha = alpha;
-		} else {
-			this.alpha = DEFAULT_ALPHA;
-		}
-		if (minTemp != null) {
-			if ((minTemp < 0.) || (minTemp > 1.)) {
-				throw new IllegalArgumentException("Minimum temperature must be between 0. and 1.");
-			}
-			this.minTemp = minTemp;
-		} else {
-			this.minTemp = DEFAULT_MIN_TEMP;
-		}
-		if (acceptanceProbability != null) {
-			this.acceptanceProbability = acceptanceProbability;
-		} else {
-			this.acceptanceProbability = new AcceptanceProbability() {
-				@Override
-				public Double compute(Double oldScore, Double newScore, Double temp) {
-					return (newScore < oldScore ? 1 : Math.exp((oldScore - newScore) / temp));
-				}
-			};
-		}
-		if (successorFinder != null) {
-			this.successorFinder = successorFinder;
-		} else {
-			// default implementation of the successor: picks up a successor
-			// randomly
-			this.successorFinder = new SuccessorFinder<A, S, N>() {
-				@Override
-				public N estimate(N node, NodeExpander<A, S, N> nodeExpander) {
-					List<N> successors = new ArrayList<>();
-					// find a random successor
-					for (N successor : nodeExpander.expand(node)) {
-						successors.add(successor);
-					}
-					Random randIndGen = new Random();
-					return successors.get(Math.abs(randIndGen.nextInt()) % successors.size());
-				}
-			};
-		}
-	}
+            AcceptanceProbability acceptanceProbability, SuccessorFinder<A, S, N> successorFinder) {
+        
+        // 1. Validaciones básicas
+        if (initialNode == null) throw new IllegalArgumentException("Provide a valid initial node");
+        if (nodeExpander == null) throw new IllegalArgumentException("Provide a valid node expander");
+        
+        this.initialNode = initialNode;
+        this.nodeExpander = nodeExpander;
+        
+        // 2. Delegamos la configuración compleja en métodos privados
+        this.alpha = configureAlpha(alpha);
+        this.minTemp = configureMinTemp(minTemp);
+        this.acceptanceProbability = configureAcceptanceProbability(acceptanceProbability);
+        this.successorFinder = configureSuccessorFinder(successorFinder);
+    }
+	private Double configureAlpha(Double alpha) {
+        if (alpha != null) {
+            if (alpha <= 0. || alpha >= 1.0) {
+                throw new IllegalArgumentException("alpha must be between 0. and 1.");
+            }
+            return alpha;
+        }
+        return DEFAULT_ALPHA;
+    }
+
+    private Double configureMinTemp(Double minTemp) {
+        if (minTemp != null) {
+            if (minTemp < 0. || minTemp > 1.) {
+                throw new IllegalArgumentException("Minimum temperature must be between 0. and 1.");
+            }
+            return minTemp;
+        }
+        return DEFAULT_MIN_TEMP;
+    }
+
+    private AcceptanceProbability configureAcceptanceProbability(AcceptanceProbability ap) {
+        if (ap != null) return ap;
+        return new AcceptanceProbability() {
+            @Override
+            public Double compute(Double oldScore, Double newScore, Double temp) {
+                return (newScore < oldScore ? 1 : Math.exp((oldScore - newScore) / temp));
+            }
+        };
+    }
+
+    private SuccessorFinder<A, S, N> configureSuccessorFinder(SuccessorFinder<A, S, N> sf) {
+        if (sf != null) return sf;
+        return new SuccessorFinder<A, S, N>() {
+            @Override
+            public N estimate(N node, NodeExpander<A, S, N> nodeExpander) {
+                List<N> successors = new ArrayList<>();
+                for (N successor : nodeExpander.expand(node)) {
+                    successors.add(successor);
+                }
+                Random randIndGen = new Random();
+                return successors.get(Math.abs(randIndGen.nextInt()) % successors.size());
+            }
+        };
+    }
 
 	@Override
 	public ASIterator iterator() {
@@ -201,3 +206,4 @@ public class AnnealingSearch<A, S, N extends HeuristicNode<A, S, Double, N>> ext
 		N estimate(N node, NodeExpander<A, S, N> nodeExpander);
 	}
 }
+
